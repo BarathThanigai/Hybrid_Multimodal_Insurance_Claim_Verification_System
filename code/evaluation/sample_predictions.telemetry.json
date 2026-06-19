@@ -1,0 +1,12 @@
+{
+  "claims": 20,
+  "images": 29,
+  "model_calls": 29,
+  "cache_hits": 0,
+  "input_tokens": 0,
+  "output_tokens": 0,
+  "errors": 29,
+  "runtime_seconds": 1.679,
+  "model": "gpt-5.5",
+  "estimated_cost_usd": 0.0
+}

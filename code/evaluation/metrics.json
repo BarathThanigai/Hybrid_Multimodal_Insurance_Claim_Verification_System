@@ -1,0 +1,47 @@
+{
+  "rows": 20,
+  "field_accuracy": {
+    "evidence_standard_met": 0.1,
+    "risk_flags": 0.05,
+    "issue_type": 0.15,
+    "object_part": 0.85,
+    "claim_status": 0.1,
+    "supporting_image_ids": 0.1,
+    "valid_image": 0.1,
+    "severity": 0.1
+  },
+  "full_structured_row_accuracy": 0.0,
+  "risk_flags_set_f1": 0.255,
+  "supporting_image_ids_set_f1": 0.1,
+  "per_object_claim_status_accuracy": {
+    "car": 0.125,
+    "laptop": 0.0,
+    "package": 0.1667
+  },
+  "confusion": {
+    "issue_type": {
+      "broken_part -> unknown": 3,
+      "crack -> unknown": 3,
+      "crushed_packaging -> unknown": 1,
+      "dent -> unknown": 3,
+      "none -> unknown": 2,
+      "scratch -> unknown": 2,
+      "stain -> unknown": 1,
+      "torn_packaging -> unknown": 1,
+      "unknown -> unknown": 3,
+      "water_damage -> unknown": 1
+    },
+    "claim_status": {
+      "contradicted -> not_enough_information": 5,
+      "not_enough_information -> not_enough_information": 2,
+      "supported -> not_enough_information": 13
+    },
+    "severity": {
+      "high -> unknown": 1,
+      "low -> unknown": 4,
+      "medium -> unknown": 11,
+      "none -> unknown": 2,
+      "unknown -> unknown": 2
+    }
+  }
+}
