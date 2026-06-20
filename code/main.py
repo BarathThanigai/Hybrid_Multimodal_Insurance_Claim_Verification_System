@@ -56,7 +56,8 @@ def process_claims(
             ]
             totals["images"] += len(image_paths)
             observations = analyzer.analyze_many(image_paths, intent, refresh_cache)
-            totals["model_calls"] += sum(not obs.cache_hit for obs in observations)
+            if VISION_BACKEND != "rules":
+                totals["model_calls"] += sum(not obs.cache_hit for obs in observations)
             totals["cache_hits"] += sum(obs.cache_hit for obs in observations)
             totals["input_tokens"] += sum(obs.input_tokens for obs in observations)
             totals["output_tokens"] += sum(obs.output_tokens for obs in observations)

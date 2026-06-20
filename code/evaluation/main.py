@@ -85,16 +85,34 @@ def render_report(metrics: dict, telemetry: dict, path: Path) -> None:
 > `VISION_BACKEND=ollama` with Ollama running, or set
 > `VISION_BACKEND=openai` with `OPENAI_API_KEY`, before submission.
 """
+    backend = telemetry.get("vision_backend", "unknown")
+    if backend == "rules":
+        strategy = """The selected deterministic rules backend opens and technically
+validates every image, then maps multilingual claim extraction into the shared
+observation schema. Evidence requirements, history-only risk flags, and final
+decisions remain deterministic. This is fast, offline, and reproducible, but it
+cannot independently perceive whether claimed semantic damage is truly visible."""
+        comparison = """1. **Deterministic rules (selected):** near-zero compute cost and reliable
+   orchestration on constrained hardware; technical image defects are measured,
+   while semantic object/part/damage fields are claim-derived.
+2. **Optional vision models:** stronger independent visual perception, with higher
+   latency, memory use, cost, or output-format risk depending on backend."""
+    else:
+        strategy = """Each image is independently analyzed by a vision-capable model.
+Deterministic Python modules then apply evidence requirements, history-only risk
+flags, and final decisions. Images remain the primary source of truth; user
+history never changes a visual decision."""
+        comparison = """1. **Deterministic rules:** fast technical validation, but no independent
+   semantic damage perception.
+2. **Vision observations + deterministic policy (selected):** the model performs
+   perception; code controls evidence, risk, decisions, enums, and serialization."""
     report = f"""# Evaluation Report
 
 Generated: {datetime.now(timezone.utc).isoformat()}
 
 ## Final strategy
 
-Each image is independently analyzed by a vision-capable model using a strict
-structured schema. Deterministic Python modules then apply evidence requirements,
-history-only risk flags, and final decisions. Images remain the primary source of
-truth; user history never changes a visual decision.
+{strategy}
 {vision_note}
 
 ## Sample metrics
@@ -117,10 +135,7 @@ Supporting-image set F1: **{metrics['supporting_image_ids_set_f1']:.1%}**
 
 ## Strategy comparison
 
-1. **Rules-only fallback:** multilingual dictionaries extract claims and technical
-   checks detect unreadable images, but rules cannot reliably perceive semantic damage.
-2. **Vision observations + deterministic policy (selected):** the model performs
-   perception; code controls evidence, risk, decisions, enums, and serialization.
+{comparison}
 
 ## Operational analysis
 
@@ -135,7 +150,8 @@ Supporting-image set F1: **{metrics['supporting_image_ids_set_f1']:.1%}**
 - Vision backend: `{telemetry.get('vision_backend', 'unknown')}`
 - Model: `{telemetry.get('model', 'unknown')}`
 
-For the default Hugging Face backend, cost is zero after the model is downloaded.
+The default rules backend has no model or API cost. Hugging Face and Ollama are
+local optional backends; OpenAI is an optional paid backend.
 Images are resized before analysis and cached by bytes, claim, backend, model,
 and prompt version. Sequential processing stays conservative and reproducible.
 

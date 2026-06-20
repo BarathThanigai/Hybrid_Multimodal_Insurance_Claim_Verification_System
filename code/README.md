@@ -1,17 +1,17 @@
 # Multi-Modal Evidence Review
 
 Production-style Python pipeline for the HackerRank Orchestrate June 2026
-challenge. It extracts multilingual claims, independently analyzes every local
-image with a vision model, applies evidence rules and user-history risk context,
-and writes the exact required `output.csv` schema.
+challenge. It extracts multilingual claims, validates every referenced local
+image, applies evidence rules and user-history risk context, and writes the exact
+required `output.csv` schema.
 
 ## Architecture
 
 1. `claim_extractor.py` extracts claimed parts and issues from English, Hindi,
    Hinglish, and Spanish conversations.
-2. `image_analyzer.py` analyzes each image independently with a pluggable vision
-   backend and requires structured visual observations. Hugging Face SmolVLM2
-   500M is the default free local backend; Ollama and OpenAI remain optional.
+2. `image_analyzer.py` opens and technically checks each image, then emits the
+   shared observation schema through a pluggable backend. Deterministic rules are
+   the default; Hugging Face, Ollama, and OpenAI remain optional.
 3. `evidence_validator.py` applies `evidence_requirements.csv`.
 4. `risk_assessor.py` combines image-quality/authenticity flags with history flags.
    History never overrides visual evidence.
@@ -19,7 +19,9 @@ and writes the exact required `output.csv` schema.
    enough information.
 6. `main.py` validates and writes the exact output schema.
 
-Images are primary evidence. Text inside an image is treated as untrusted content.
+The rules backend validates image usability but derives semantic fields from the
+claim. Model backends can provide independent visual perception. Text inside an
+image is treated as untrusted content by model backends.
 
 ## Setup
 
@@ -39,11 +41,37 @@ source .venv/bin/activate
 pip install -r code/requirements.txt
 ```
 
-No paid API key is required for the default local setup.
+No model download or paid API key is required for the default rules setup.
 
-## Lightweight local vision setup
+## Recommended rules backend
 
-The default model is `HuggingFaceTB/SmolVLM2-500M-Video-Instruct`. This is the
+`VISION_BACKEND=rules` is the default and recommended mode for CPU-only systems
+with limited RAM. It opens every referenced image, validates dimensions, measures
+blur and low light, and maps multilingual claim extraction into `ImageObservation`.
+It still applies `evidence_requirements.csv`, `user_history.csv`, risk assessment,
+and the unchanged decision engine.
+
+Its tradeoff is explicit: rules cannot independently verify semantic damage in
+pixels. They provide fast, deterministic, reproducible orchestration rather than
+model-grade visual understanding.
+
+PowerShell:
+
+```powershell
+$env:VISION_BACKEND="rules"
+python code\main.py --refresh-cache
+```
+
+Unix/macOS:
+
+```bash
+export VISION_BACKEND=rules
+python code/main.py --refresh-cache
+```
+
+## Optional Hugging Face backend
+
+The local model is `HuggingFaceTB/SmolVLM2-500M-Video-Instruct`. This is the
 canonical checkpoint to which the requested `SmolVLM2-500M-Instruct` name
 redirects. It handles still images, runs on CPU, and is the recommended option
 for an 8 GB RAM laptop without an NVIDIA GPU. The model is downloaded from
@@ -91,7 +119,7 @@ use and latency, switch to the 2.2B fallback without changing code:
 $env:HF_MODEL="HuggingFaceTB/SmolVLM2-2.2B-Instruct"
 ```
 
-The 500M model is deliberately the default: the 2.2B variant may approach or
+The 500M model is deliberately the lightweight option: the 2.2B variant may approach or
 exceed comfortable memory limits on an 8 GB system during generation. Lower
 `MAX_IMAGE_SIDE` (for example to `768`) or `HF_MAX_NEW_TOKENS` if memory or
 latency is still tight. Environment variables can also be placed in a local
@@ -114,7 +142,9 @@ python code/main.py --model HuggingFaceTB/SmolVLM2-500M-Video-Instruct --refresh
 ```
 
 Responses are cached under `code/.cache/`. The cache key includes image bytes,
-the extracted claim, backend, model, and prompt version.
+the extracted claim, backend, model, and prompt version. Switching backends
+automatically ignores incompatible cache entries, so Hugging Face output can
+never be reused by the rules backend.
 
 ## Evaluate
 
@@ -141,10 +171,16 @@ Expected labels are loaded only after predictions have been generated.
 
 ## Configuration
 
-See `.env.example`. Defaults are centralized in `config.py`. Cost figures are
-zero for the default Hugging Face backend after the model has been downloaded.
+See `.env.example`. Defaults are centralized in `config.py`. The default rules
+backend has no model, network, or API cost.
 
 Common settings:
+
+```text
+VISION_BACKEND=rules
+```
+
+Optional Hugging Face backend:
 
 ```text
 VISION_BACKEND=huggingface
@@ -169,4 +205,11 @@ pip install openai
 export VISION_BACKEND=openai
 export OPENAI_API_KEY=...
 export OPENAI_VISION_MODEL=gpt-5.5
+```
+
+All four backends use the same command after configuration:
+
+```bash
+python code/main.py --refresh-cache
+python code/evaluation/main.py --refresh-cache
 ```

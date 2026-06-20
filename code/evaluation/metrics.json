@@ -1,47 +1,64 @@
 {
   "rows": 20,
   "field_accuracy": {
-    "evidence_standard_met": 0.1,
-    "risk_flags": 0.05,
-    "issue_type": 0.15,
+    "evidence_standard_met": 0.75,
+    "risk_flags": 0.55,
+    "issue_type": 0.5,
     "object_part": 0.85,
-    "claim_status": 0.1,
-    "supporting_image_ids": 0.1,
-    "valid_image": 0.1,
-    "severity": 0.1
+    "claim_status": 0.6,
+    "supporting_image_ids": 0.45,
+    "valid_image": 0.9,
+    "severity": 0.45
   },
-  "full_structured_row_accuracy": 0.0,
-  "risk_flags_set_f1": 0.255,
-  "supporting_image_ids_set_f1": 0.1,
+  "full_structured_row_accuracy": 0.15,
+  "risk_flags_set_f1": 0.7183,
+  "supporting_image_ids_set_f1": 0.65,
   "per_object_claim_status_accuracy": {
-    "car": 0.125,
-    "laptop": 0.0,
-    "package": 0.1667
+    "car": 0.5,
+    "laptop": 0.8333,
+    "package": 0.5
   },
   "confusion": {
     "issue_type": {
-      "broken_part -> unknown": 3,
-      "crack -> unknown": 3,
-      "crushed_packaging -> unknown": 1,
-      "dent -> unknown": 3,
-      "none -> unknown": 2,
-      "scratch -> unknown": 2,
-      "stain -> unknown": 1,
-      "torn_packaging -> unknown": 1,
-      "unknown -> unknown": 3,
-      "water_damage -> unknown": 1
+      "broken_part -> broken_part": 1,
+      "broken_part -> scratch": 1,
+      "broken_part -> unknown": 1,
+      "crack -> crack": 2,
+      "crack -> glass_shatter": 1,
+      "crushed_packaging -> crushed_packaging": 1,
+      "dent -> dent": 3,
+      "none -> torn_packaging": 1,
+      "none -> unknown": 1,
+      "scratch -> scratch": 1,
+      "scratch -> unknown": 1,
+      "stain -> stain": 1,
+      "torn_packaging -> missing_part": 1,
+      "unknown -> crack": 1,
+      "unknown -> crushed_packaging": 1,
+      "unknown -> missing_part": 1,
+      "water_damage -> water_damage": 1
     },
     "claim_status": {
-      "contradicted -> not_enough_information": 5,
-      "not_enough_information -> not_enough_information": 2,
-      "supported -> not_enough_information": 13
+      "contradicted -> not_enough_information": 2,
+      "contradicted -> supported": 3,
+      "not_enough_information -> supported": 2,
+      "supported -> not_enough_information": 1,
+      "supported -> supported": 12
     },
     "severity": {
-      "high -> unknown": 1,
-      "low -> unknown": 4,
-      "medium -> unknown": 11,
-      "none -> unknown": 2,
-      "unknown -> unknown": 2
+      "high -> low": 1,
+      "low -> high": 1,
+      "low -> low": 1,
+      "low -> medium": 1,
+      "low -> unknown": 1,
+      "medium -> high": 1,
+      "medium -> low": 1,
+      "medium -> medium": 8,
+      "medium -> unknown": 1,
+      "none -> medium": 1,
+      "none -> unknown": 1,
+      "unknown -> high": 1,
+      "unknown -> medium": 1
     }
   }
 }

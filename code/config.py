@@ -46,7 +46,8 @@ RISK_FLAGS = [
 CLAIM_STATUSES = {"supported", "contradicted", "not_enough_information"}
 SEVERITIES = {"none", "low", "medium", "high", "unknown"}
 
-VISION_BACKEND = os.getenv("VISION_BACKEND", "huggingface").strip().lower()
+VISION_BACKEND = os.getenv("VISION_BACKEND", "rules").strip().lower()
+RULES_MODEL = "deterministic-rules-v1"
 HF_MODEL = os.getenv(
     "HF_MODEL", "HuggingFaceTB/SmolVLM2-500M-Video-Instruct"
 )
@@ -62,10 +63,11 @@ OPENAI_VISION_MODEL = os.getenv("OPENAI_VISION_MODEL", "gpt-5.5")
 MODEL = os.getenv(
     "VISION_MODEL",
     {
+        "rules": RULES_MODEL,
         "huggingface": HF_MODEL,
         "ollama": OLLAMA_MODEL,
         "openai": OPENAI_VISION_MODEL,
-    }.get(VISION_BACKEND, HF_MODEL),
+    }.get(VISION_BACKEND, RULES_MODEL),
 )
 IMAGE_DETAIL = os.getenv("OPENAI_IMAGE_DETAIL", "high")
 MAX_IMAGE_SIDE = int(os.getenv("MAX_IMAGE_SIDE", "1024"))

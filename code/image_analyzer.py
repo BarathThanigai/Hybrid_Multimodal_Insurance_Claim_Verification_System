@@ -20,7 +20,8 @@ from pydantic import BaseModel, Field
 from config import (
     CACHE_DIR, HF_CPU_THREADS, HF_DEVICE, HF_LOCAL_FILES_ONLY, HF_MAX_NEW_TOKENS,
     HF_MODEL, IMAGE_DETAIL, ISSUE_TYPES, MAX_RETRIES, MODEL, OBJECT_PARTS,
-    OLLAMA_MODEL, OLLAMA_URL, OPENAI_VISION_MODEL, REQUEST_TIMEOUT, VISION_BACKEND,
+    OLLAMA_MODEL, OLLAMA_URL, OPENAI_VISION_MODEL, REQUEST_TIMEOUT, RULES_MODEL,
+    VISION_BACKEND,
 )
 from utils import ClaimIntent, ImageObservation, encode_image, file_sha256, image_id, json_dump
 
@@ -314,21 +315,22 @@ class ImageAnalyzer:
         backend: str = VISION_BACKEND,
         ollama_url: str = OLLAMA_URL,
     ):
-        self.backend = (backend or "huggingface").strip().lower()
+        self.backend = (backend or "rules").strip().lower()
         defaults = {
+            "rules": RULES_MODEL,
             "huggingface": HF_MODEL,
             "ollama": OLLAMA_MODEL,
             "openai": OPENAI_VISION_MODEL,
         }
-        self.model = model or defaults.get(self.backend, HF_MODEL)
+        self.model = model or defaults.get(self.backend, RULES_MODEL)
         self.ollama_url = ollama_url.rstrip("/")
         self.cache_dir = cache_dir
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._client = None
         self._processor = None
-        if self.backend not in {"huggingface", "ollama", "openai"}:
+        if self.backend not in {"rules", "huggingface", "ollama", "openai"}:
             raise ValueError(
-                "VISION_BACKEND must be 'huggingface', 'ollama', or 'openai'"
+                "VISION_BACKEND must be 'rules', 'huggingface', 'ollama', or 'openai'"
             )
 
     def _cache_path(self, path: Path, intent: ClaimIntent) -> Path:
@@ -359,6 +361,63 @@ class ImageAnalyzer:
         if technical["likely_blurry"] and "blurry_image" not in quality:
             quality.append("blurry_image")
         return parsed, quality
+
+    def _analyze_rules(
+        self, intent: ClaimIntent, technical: dict
+    ) -> tuple[VisionResult, int, int]:
+        """Create a deterministic observation after the image has been decoded."""
+        usable_dimensions = technical["width"] >= 64 and technical["height"] >= 64
+        part = intent.primary_part
+        if part not in OBJECT_PARTS[intent.claim_object] or part == "unknown":
+            part = "unknown"
+        issue = intent.primary_issue if intent.primary_issue in ISSUE_TYPES else "unknown"
+        part_known = part != "unknown"
+        issue_known = issue != "unknown"
+        condition_visible = usable_dimensions and part_known and issue_known
+
+        if issue == "none":
+            damage_present: bool | None = False
+            severity = "none"
+        elif not issue_known:
+            damage_present = None
+            severity = "unknown"
+        else:
+            damage_present = True
+            if issue == "glass_shatter" or "severe" in intent.qualifiers:
+                severity = "high"
+            elif issue in {"scratch", "stain"}:
+                severity = "low"
+            else:
+                severity = "medium"
+
+        quality_issues = []
+        if not usable_dimensions:
+            quality_issues.append("cropped_or_obstructed")
+        description = (
+            f"Readable {intent.claim_object} image validated by deterministic rules; "
+            f"the extracted claim reports {issue.replace('_', ' ')} on "
+            f"the {part.replace('_', ' ')}."
+            if part_known and issue_known
+            else "Image opened successfully, but the claimed part or issue was not specific enough."
+        )
+        return (
+            VisionResult(
+                visible_object=intent.claim_object,
+                visible_part=part,
+                visible_damage=issue,
+                damage_present=damage_present,
+                claimed_part_visible=usable_dimensions and part_known,
+                claimed_condition_visible=condition_visible,
+                severity=severity,
+                quality_issues=quality_issues,
+                confidence=0.5 if condition_visible else 0.25,
+                description=description,
+                original_photo_likely=True,
+                text_instruction_present="instruction_attack" in intent.qualifiers,
+            ),
+            0,
+            0,
+        )
 
     def _huggingface_components(self):
         """Load the local model lazily so non-Hugging Face backends stay optional."""
@@ -518,7 +577,9 @@ class ImageAnalyzer:
 
         started = time.perf_counter()
         try:
-            if self.backend == "huggingface":
+            if self.backend == "rules":
+                parsed, input_tokens, output_tokens = self._analyze_rules(intent, technical)
+            elif self.backend == "huggingface":
                 parsed, input_tokens, output_tokens = self._analyze_huggingface(
                     data_url, intent, technical
                 )
