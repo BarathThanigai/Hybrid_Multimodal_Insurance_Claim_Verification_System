@@ -95,8 +95,11 @@ def process_claims(
     write_csv(output_path, output_rows, OUTPUT_COLUMNS)
     totals["runtime_seconds"] = round(time.perf_counter() - started, 3)
     totals["estimated_cost_usd"] = round(
-        totals["input_tokens"] / 1_000_000 * INPUT_USD_PER_MILLION
-        + totals["output_tokens"] / 1_000_000 * OUTPUT_USD_PER_MILLION, 6,
+        (
+            totals["input_tokens"] / 1_000_000 * INPUT_USD_PER_MILLION
+            + totals["output_tokens"] / 1_000_000 * OUTPUT_USD_PER_MILLION
+        ) if VISION_BACKEND == "openai" else 0.0,
+        6,
     )
     output_path.with_suffix(".telemetry.json").write_text(json.dumps(totals, indent=2), encoding="utf-8")
     LOGGER.info("Wrote %d predictions to %s", len(output_rows), output_path)

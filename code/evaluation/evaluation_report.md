@@ -13,7 +13,8 @@ truth; user history never changes a visual decision.
 > Every model call followed the conservative failure path. The metrics below
 > therefore validate schema, orchestration, claim extraction, and error handling;
 > they are not representative of the configured vision strategy. Re-run with
-> Ollama running and the configured model downloaded, or set
+> the configured Hugging Face model downloaded, or set
+> `VISION_BACKEND=ollama` with Ollama running, or set
 > `VISION_BACKEND=openai` with `OPENAI_API_KEY`, before submission.
 
 
@@ -64,7 +65,7 @@ Supporting-image set F1: **10.0%**
 - Vision backend: `ollama`
 - Model: `qwen2.5vl:7b`
 
-For the default Ollama backend, cost is zero after the local model is downloaded.
+For the current default Hugging Face backend, cost is zero after the model is downloaded.
 Images are resized before analysis and cached by bytes, claim, backend, model,
 and prompt version. Sequential processing stays conservative and reproducible.
 

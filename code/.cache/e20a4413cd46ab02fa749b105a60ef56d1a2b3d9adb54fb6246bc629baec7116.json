@@ -1,0 +1,21 @@
+{
+  "image_id": "img_1",
+  "visible_object": "unknown",
+  "visible_part": "unknown",
+  "visible_damage": "unknown",
+  "damage_present": null,
+  "claimed_part_visible": false,
+  "claimed_condition_visible": false,
+  "severity": "unknown",
+  "quality_issues": [],
+  "confidence": 0.25,
+  "description": "Broke.",
+  "original_photo_likely": true,
+  "text_instruction_present": false,
+  "technical_valid": true,
+  "error": null,
+  "input_tokens": 983,
+  "output_tokens": 4,
+  "latency_seconds": 41.044866100000036,
+  "cache_hit": false
+}

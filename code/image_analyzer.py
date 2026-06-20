@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import io
 import json
 import logging
 import os
@@ -16,13 +18,14 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from config import (
-    CACHE_DIR, IMAGE_DETAIL, ISSUE_TYPES, MAX_RETRIES, MODEL, OBJECT_PARTS,
-    OLLAMA_MODEL, OLLAMA_URL, REQUEST_TIMEOUT, VISION_BACKEND,
+    CACHE_DIR, HF_CPU_THREADS, HF_DEVICE, HF_LOCAL_FILES_ONLY, HF_MAX_NEW_TOKENS,
+    HF_MODEL, IMAGE_DETAIL, ISSUE_TYPES, MAX_RETRIES, MODEL, OBJECT_PARTS,
+    OLLAMA_MODEL, OLLAMA_URL, OPENAI_VISION_MODEL, REQUEST_TIMEOUT, VISION_BACKEND,
 )
 from utils import ClaimIntent, ImageObservation, encode_image, file_sha256, image_id, json_dump
 
 LOGGER = logging.getLogger(__name__)
-PROMPT_VERSION = "vision-v1.3-backend-switch"
+PROMPT_VERSION = "vision-v1.6-smolvlm2-caption"
 
 
 class VisionResult(BaseModel):
@@ -85,6 +88,16 @@ def _json_instruction() -> str:
 Do not wrap the JSON in markdown. Do not include extra keys."""
 
 
+def _caption_prompt(intent: ClaimIntent) -> str:
+    parts = ", ".join(part.replace("_", " ") for part in intent.claimed_parts)
+    return f"""Describe only what is visibly present in this image in one short factual sentence.
+Start the sentence with Car, Laptop, or Package. Name the specific visible part; state
+the visible damage or say no visible damage; give severity as low, medium, or high;
+and mention blur, crop, obstruction, darkness, glare, or manipulation if visible.
+Inspect the claimed {intent.claim_object} part ({parts or 'unknown'}), but do not repeat
+the claim unless the image itself shows it. Do not use JSON, labels, lists, or markdown."""
+
+
 def _extract_json_object(text: str) -> dict:
     cleaned = (text or "").strip()
     cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
@@ -98,6 +111,201 @@ def _extract_json_object(text: str) -> dict:
         return json.loads(match.group(0))
 
 
+def _as_bool(value, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value.strip().lower() in {"true", "false"}:
+        return value.strip().lower() == "true"
+    return default
+
+
+def _coerce_vision_payload(payload: dict) -> dict:
+    """Conservatively repair minor schema drift from small local models."""
+    objects = {"car", "laptop", "package", "other", "unknown"}
+    severities = {"none", "low", "medium", "high", "unknown"}
+    quality_labels = {
+        "blurry_image", "cropped_or_obstructed", "low_light_or_glare",
+        "wrong_angle", "possible_manipulation", "non_original_image",
+    }
+
+
+def _label_present(text: str, label: str) -> bool:
+    """Match enum labels in prose, snake_case, or hyphenated model output."""
+    words = [re.escape(word) for word in label.split("_")]
+    pattern = r"(?<!\w)" + r"[\s_-]+".join(words) + r"(?!\w)"
+    return re.search(pattern, text, flags=re.IGNORECASE) is not None
+
+
+def _explicit_label(text: str, field: str, allowed: set[str]) -> str | None:
+    """Recover a simple key/value pair from JSON-like malformed text."""
+    match = re.search(
+        rf'["\']?{re.escape(field)}["\']?\s*:\s*["\']?([a-zA-Z_ -]+)',
+        text,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+    candidate = re.sub(r"[\s-]+", "_", match.group(1).strip().lower())
+    return candidate if candidate in allowed else None
+
+
+def _caption_to_vision_result(text: str, intent: ClaimIntent) -> VisionResult:
+    """Deterministically convert a short factual caption into the shared schema."""
+    raw = text or ""
+    lowered = raw.lower()
+
+    object_patterns = {
+        "car": r"\b(?:car|vehicle|automobile)\b",
+        "laptop": r"\b(?:laptop|notebook computer)\b",
+        "package": r"\b(?:package|parcel|shipping box|cardboard box|carton)\b",
+    }
+    visible_object = next(
+        (label for label, pattern in object_patterns.items() if re.search(pattern, lowered)),
+        "unknown",
+    )
+
+    allowed_parts = set(OBJECT_PARTS[intent.claim_object]) - {"unknown"}
+    visible_part = _explicit_label(raw, "visible_part", allowed_parts)
+    claimed_part_visible = any(
+        part != "unknown" and _label_present(lowered, part)
+        for part in intent.claimed_parts
+    )
+    if visible_part is None:
+        visible_part = next(
+            (
+                part for part in sorted(allowed_parts, key=len, reverse=True)
+                if _label_present(lowered, part)
+            ),
+            "unknown",
+        )
+    if visible_object == "unknown" and visible_part != "unknown":
+        visible_object = intent.claim_object
+
+    damage_patterns = [
+        ("glass_shatter", r"\b(?:shatter(?:ed|ing)?|shattered glass)\b"),
+        ("crushed_packaging", r"\bcrush(?:ed|ing)?\b"),
+        ("torn_packaging", r"\b(?:torn|tear|ripped)\b"),
+        ("water_damage", r"\b(?:water damage|water-damaged|wet)\b"),
+        ("broken_part", r"\b(?:broken|break|snapped|hole|puncture(?:d)?)\b"),
+        ("missing_part", r"\bmissing\b"),
+        ("scratch", r"\bscratch(?:ed|es|ing)?\b"),
+        ("crack", r"\bcrack(?:ed|s|ing)?\b"),
+        ("dent", r"\bdent(?:ed|s|ing)?\b"),
+        ("stain", r"\bstain(?:ed|s|ing)?\b"),
+    ]
+    visible_damage = _explicit_label(raw, "visible_damage", set(ISSUE_TYPES))
+    detected_damage = next(
+        (label for label, pattern in damage_patterns if re.search(pattern, lowered)),
+        None,
+    )
+    explicit_no_damage = bool(
+        re.search(r"\b(?:no visible damage|no damage|undamaged|intact)\b", lowered)
+    )
+    if visible_damage is None:
+        visible_damage = detected_damage or ("none" if explicit_no_damage else "unknown")
+
+    damage_present: bool | None
+    if detected_damage or visible_damage not in {"none", "unknown"}:
+        damage_present = True
+    elif explicit_no_damage and claimed_part_visible:
+        damage_present = False
+    else:
+        damage_present = None
+
+    explicit_severity = re.search(
+        r"\bseverity\s*(?:is|:|-)?\s*(none|low|medium|high)\b", lowered
+    )
+    if explicit_severity:
+        severity = explicit_severity.group(1)
+    elif re.search(r"\b(?:shatter(?:ed|ing)?|severe|crush(?:ed|ing)?)\b", lowered):
+        severity = "high"
+    elif re.search(
+        r"\b(?:dent(?:ed)?|crack(?:ed)?|stain(?:ed)?|broken|hole|puncture(?:d)?)\b",
+        lowered,
+    ):
+        severity = "medium"
+    elif re.search(r"\bscratch(?:ed|es|ing)?\b", lowered):
+        severity = "low"
+    elif explicit_no_damage:
+        severity = "none"
+    else:
+        severity = "unknown"
+
+    quality_issues = []
+    quality_patterns = {
+        "blurry_image": r"\b(?:blurry|blurred|out of focus)\b",
+        "cropped_or_obstructed": r"\b(?:cropped|obstructed|occluded|blocked)\b",
+        "low_light_or_glare": r"\b(?:low light|dark|glare|reflection)\b",
+        "wrong_angle": r"\b(?:wrong angle|poor angle)\b",
+        "possible_manipulation": r"\b(?:manipulated|edited|photoshopped)\b",
+        "non_original_image": r"\b(?:screenshot|stock image|web image|collage)\b",
+    }
+    for issue, pattern in quality_patterns.items():
+        if re.search(pattern, lowered):
+            quality_issues.append(issue)
+
+    useful_evidence = any([
+        visible_object != "unknown",
+        visible_part != "unknown",
+        visible_damage != "unknown",
+        explicit_no_damage,
+    ])
+    return VisionResult(
+        visible_object=visible_object,
+        visible_part=visible_part,
+        visible_damage=visible_damage,
+        damage_present=damage_present,
+        claimed_part_visible=claimed_part_visible,
+        claimed_condition_visible=claimed_part_visible,
+        severity=severity,
+        quality_issues=quality_issues,
+        confidence=0.55 if useful_evidence else 0.25,
+        description=re.sub(r"\s+", " ", raw).strip()[:500]
+        or "The local model produced no useful visual caption.",
+        original_photo_likely="non_original_image" not in quality_issues,
+        text_instruction_present=bool(re.search(r"\binstruction\b", lowered)),
+    )
+    damage_present = payload.get("damage_present")
+    if isinstance(damage_present, str):
+        lowered = damage_present.strip().lower()
+        damage_present = {"true": True, "false": False, "null": None}.get(lowered)
+    if not isinstance(damage_present, (bool, type(None))):
+        damage_present = None
+    try:
+        confidence = min(1.0, max(0.0, float(payload.get("confidence", 0.0))))
+    except (TypeError, ValueError):
+        confidence = 0.0
+    quality = payload.get("quality_issues", [])
+    if not isinstance(quality, list):
+        quality = []
+    visible_object = str(payload.get("visible_object", "unknown")).strip().lower()
+    visible_damage = str(payload.get("visible_damage", "unknown")).strip().lower()
+    severity = str(payload.get("severity", "unknown")).strip().lower()
+    return {
+        "visible_object": visible_object if visible_object in objects else "unknown",
+        "visible_part": str(payload.get("visible_part", "unknown")).strip().lower(),
+        "visible_damage": visible_damage if visible_damage in ISSUE_TYPES else "unknown",
+        "damage_present": damage_present,
+        "claimed_part_visible": _as_bool(payload.get("claimed_part_visible"), False),
+        "claimed_condition_visible": _as_bool(
+            payload.get("claimed_condition_visible"), False
+        ),
+        "severity": severity if severity in severities else "unknown",
+        "quality_issues": [
+            item for item in quality
+            if isinstance(item, str) and item in quality_labels
+        ],
+        "confidence": confidence,
+        "description": str(payload.get("description", ""))[:500],
+        "original_photo_likely": _as_bool(
+            payload.get("original_photo_likely"), True
+        ),
+        "text_instruction_present": _as_bool(
+            payload.get("text_instruction_present"), False
+        ),
+    }
+
+
 class ImageAnalyzer:
     def __init__(
         self,
@@ -106,14 +314,22 @@ class ImageAnalyzer:
         backend: str = VISION_BACKEND,
         ollama_url: str = OLLAMA_URL,
     ):
-        self.backend = (backend or "ollama").strip().lower()
-        self.model = model or (OLLAMA_MODEL if self.backend == "ollama" else MODEL)
+        self.backend = (backend or "huggingface").strip().lower()
+        defaults = {
+            "huggingface": HF_MODEL,
+            "ollama": OLLAMA_MODEL,
+            "openai": OPENAI_VISION_MODEL,
+        }
+        self.model = model or defaults.get(self.backend, HF_MODEL)
         self.ollama_url = ollama_url.rstrip("/")
         self.cache_dir = cache_dir
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self._client = None
-        if self.backend not in {"ollama", "openai"}:
-            raise ValueError("VISION_BACKEND must be either 'ollama' or 'openai'")
+        self._processor = None
+        if self.backend not in {"huggingface", "ollama", "openai"}:
+            raise ValueError(
+                "VISION_BACKEND must be 'huggingface', 'ollama', or 'openai'"
+            )
 
     def _cache_path(self, path: Path, intent: ClaimIntent) -> Path:
         key = json.dumps({
@@ -143,6 +359,77 @@ class ImageAnalyzer:
         if technical["likely_blurry"] and "blurry_image" not in quality:
             quality.append("blurry_image")
         return parsed, quality
+
+    def _huggingface_components(self):
+        """Load the local model lazily so non-Hugging Face backends stay optional."""
+        if self._client is not None and self._processor is not None:
+            return self._client, self._processor
+        try:
+            import torch
+            from transformers import AutoModelForImageTextToText, AutoProcessor
+        except ImportError as exc:
+            raise RuntimeError(
+                "Install the local vision dependencies with: "
+                "pip install -r code/requirements.txt"
+            ) from exc
+
+        if HF_DEVICE == "cuda" and not torch.cuda.is_available():
+            raise RuntimeError("HF_DEVICE=cuda was requested but CUDA is unavailable")
+        device = "cuda" if HF_DEVICE == "cuda" else "cpu"
+        if device == "cpu":
+            torch.set_num_threads(max(1, HF_CPU_THREADS))
+
+        LOGGER.info("Loading local Hugging Face vision model %s on %s", self.model, device)
+        self._processor = AutoProcessor.from_pretrained(
+            self.model, local_files_only=HF_LOCAL_FILES_ONLY,
+        )
+        self._client = AutoModelForImageTextToText.from_pretrained(
+            self.model,
+            torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+            low_cpu_mem_usage=True,
+            local_files_only=HF_LOCAL_FILES_ONLY,
+        ).to(device)
+        self._client.eval()
+        return self._client, self._processor
+
+    def _analyze_huggingface(
+        self, data_url: str, intent: ClaimIntent, technical: dict
+    ) -> tuple[VisionResult, int, int]:
+        import torch
+        from PIL import Image
+
+        model, processor = self._huggingface_components()
+        encoded = data_url.split(",", 1)[1] if "," in data_url else data_url
+        with Image.open(io.BytesIO(base64.b64decode(encoded))) as source:
+            image = source.convert("RGB")
+
+        prompt_text = _caption_prompt(intent)
+        messages = [{
+            "role": "user",
+            "content": [
+                {"type": "image"},
+                {"type": "text", "text": prompt_text},
+            ],
+        }]
+        chat_prompt = processor.apply_chat_template(
+            messages, add_generation_prompt=True, tokenize=False,
+        )
+        inputs = processor(text=chat_prompt, images=[image], return_tensors="pt")
+        device = next(model.parameters()).device
+        inputs = {key: value.to(device) for key, value in inputs.items()}
+        input_tokens = int(inputs["input_ids"].shape[-1])
+        with torch.inference_mode():
+            generated = model.generate(
+                **inputs,
+                do_sample=False,
+                max_new_tokens=HF_MAX_NEW_TOKENS,
+                use_cache=True,
+            )
+        new_tokens = generated[:, input_tokens:]
+        text = processor.batch_decode(new_tokens, skip_special_tokens=True)[0]
+        LOGGER.info("Raw Hugging Face caption: %s", text.strip())
+        parsed = _caption_to_vision_result(text, intent)
+        return parsed, input_tokens, int(new_tokens.shape[-1])
 
     def _analyze_openai(self, data_url: str, intent: ClaimIntent, technical: dict) -> tuple[VisionResult, int, int]:
         response = self._client_instance().responses.parse(
@@ -231,7 +518,11 @@ class ImageAnalyzer:
 
         started = time.perf_counter()
         try:
-            if self.backend == "openai":
+            if self.backend == "huggingface":
+                parsed, input_tokens, output_tokens = self._analyze_huggingface(
+                    data_url, intent, technical
+                )
+            elif self.backend == "openai":
                 parsed, input_tokens, output_tokens = self._analyze_openai(data_url, intent, technical)
             else:
                 parsed, input_tokens, output_tokens = self._analyze_ollama(data_url, intent, technical)
@@ -254,7 +545,10 @@ class ImageAnalyzer:
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
             )
-            json_dump(cache_path, observation)
+            try:
+                json_dump(cache_path, observation)
+            except OSError as cache_error:
+                LOGGER.warning("Unable to write vision cache %s: %s", cache_path, cache_error)
             return observation
         except Exception as exc:
             if isinstance(exc, RuntimeError) and "OPENAI_API_KEY" in str(exc):

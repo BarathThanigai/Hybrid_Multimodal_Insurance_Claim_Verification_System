@@ -5,9 +5,12 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 CODE_DIR = Path(__file__).resolve().parent
 REPO_ROOT = CODE_DIR.parent
 DATASET_DIR = REPO_ROOT / "dataset"
+load_dotenv(CODE_DIR / ".env")
 
 OUTPUT_COLUMNS = [
     "user_id", "image_paths", "user_claim", "claim_object",
@@ -43,16 +46,29 @@ RISK_FLAGS = [
 CLAIM_STATUSES = {"supported", "contradicted", "not_enough_information"}
 SEVERITIES = {"none", "low", "medium", "high", "unknown"}
 
-VISION_BACKEND = os.getenv("VISION_BACKEND", "ollama").strip().lower()
+VISION_BACKEND = os.getenv("VISION_BACKEND", "huggingface").strip().lower()
+HF_MODEL = os.getenv(
+    "HF_MODEL", "HuggingFaceTB/SmolVLM2-500M-Video-Instruct"
+)
+HF_DEVICE = os.getenv("HF_DEVICE", "cpu").strip().lower()
+HF_MAX_NEW_TOKENS = int(os.getenv("HF_MAX_NEW_TOKENS", "256"))
+HF_CPU_THREADS = int(os.getenv("HF_CPU_THREADS", str(min(os.cpu_count() or 1, 4))))
+HF_LOCAL_FILES_ONLY = os.getenv("HF_LOCAL_FILES_ONLY", "false").strip().lower() in {
+    "1", "true", "yes", "on",
+}
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5vl:7b")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434").rstrip("/")
 OPENAI_VISION_MODEL = os.getenv("OPENAI_VISION_MODEL", "gpt-5.5")
 MODEL = os.getenv(
     "VISION_MODEL",
-    OLLAMA_MODEL if VISION_BACKEND == "ollama" else OPENAI_VISION_MODEL,
+    {
+        "huggingface": HF_MODEL,
+        "ollama": OLLAMA_MODEL,
+        "openai": OPENAI_VISION_MODEL,
+    }.get(VISION_BACKEND, HF_MODEL),
 )
 IMAGE_DETAIL = os.getenv("OPENAI_IMAGE_DETAIL", "high")
-MAX_IMAGE_SIDE = int(os.getenv("MAX_IMAGE_SIDE", "1600"))
+MAX_IMAGE_SIDE = int(os.getenv("MAX_IMAGE_SIDE", "1024"))
 MAX_RETRIES = int(os.getenv("OPENAI_MAX_RETRIES", "3"))
 REQUEST_TIMEOUT = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "90"))
 CACHE_DIR = Path(os.getenv("CLAIM_REVIEW_CACHE", CODE_DIR / ".cache"))

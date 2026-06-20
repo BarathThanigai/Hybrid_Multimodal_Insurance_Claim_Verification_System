@@ -81,7 +81,8 @@ def render_report(metrics: dict, telemetry: dict, path: Path) -> None:
 > Every model call followed the conservative failure path. The metrics below
 > therefore validate schema, orchestration, claim extraction, and error handling;
 > they are not representative of the configured vision strategy. Re-run with
-> Ollama running and the configured model downloaded, or set
+> the configured Hugging Face model downloaded, or set
+> `VISION_BACKEND=ollama` with Ollama running, or set
 > `VISION_BACKEND=openai` with `OPENAI_API_KEY`, before submission.
 """
     report = f"""# Evaluation Report
@@ -134,7 +135,7 @@ Supporting-image set F1: **{metrics['supporting_image_ids_set_f1']:.1%}**
 - Vision backend: `{telemetry.get('vision_backend', 'unknown')}`
 - Model: `{telemetry.get('model', 'unknown')}`
 
-For the default Ollama backend, cost is zero after the local model is downloaded.
+For the default Hugging Face backend, cost is zero after the model is downloaded.
 Images are resized before analysis and cached by bytes, claim, backend, model,
 and prompt version. Sequential processing stays conservative and reproducible.
 
