@@ -1,6 +1,6 @@
 # Evaluation Report
 
-Generated: 2026-06-20T04:03:17.336138+00:00
+Generated: 2026-06-20T04:26:28.625803+00:00
 
 ## Final strategy
 
@@ -55,7 +55,7 @@ Supporting-image set F1: **73.3%**
 - Input tokens: 0
 - Output tokens: 0
 - Approximate cost: **$0.0000**
-- Runtime: 1.88 seconds
+- Runtime: 1.87 seconds
 - Vision backend: `rules`
 - Model: `deterministic-rules-v1`
 

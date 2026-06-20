@@ -1,215 +1,341 @@
 # Multi-Modal Evidence Review
 
-Production-style Python pipeline for the HackerRank Orchestrate June 2026
-challenge. It extracts multilingual claims, validates every referenced local
-image, applies evidence rules and user-history risk context, and writes the exact
-required `output.csv` schema.
+![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
+![Default Backend](https://img.shields.io/badge/default-deterministic%20rules-2E8B57)
+![Offline](https://img.shields.io/badge/default%20mode-offline-blue)
+![Model Calls](https://img.shields.io/badge/default%20model%20calls-0-success)
 
-## Architecture
+A modular Python pipeline for reviewing structured damage claims involving cars,
+laptops, and packages. It combines multilingual claim extraction, local image
+validation, evidence requirements, user-history risk context, configurable
+analysis backends, and deterministic decisions.
 
-1. `claim_extractor.py` extracts claimed parts and issues from English, Hindi,
-   Hinglish, and Spanish conversations.
-2. `image_analyzer.py` opens and technically checks each image, then emits the
-   shared observation schema through a pluggable backend. Deterministic rules are
-   the default; Hugging Face, Ollama, and OpenAI remain optional.
-3. `evidence_validator.py` applies `evidence_requirements.csv`.
-4. `risk_assessor.py` combines image-quality/authenticity flags with history flags.
-   History never overrides visual evidence.
-5. `decision_engine.py` deterministically returns supported, contradicted, or not
-   enough information.
-6. `main.py` validates and writes the exact output schema.
+The default submission uses the **Rules backend** because it is reproducible,
+offline, lightweight, and practical on CPU-only hardware. Hugging Face, Ollama,
+and OpenAI remain available when semantic image understanding is needed.
 
-The rules backend validates image usability but derives semantic fields from the
-claim. Model backends can provide independent visual perception. Text inside an
-image is treated as untrusted content by model backends.
+> [!IMPORTANT]
+> The Rules backend opens and technically validates image files, but it does not
+> infer objects or damage from image pixels. Semantic fields are derived from
+> reusable conversation-extraction and policy rules.
 
-## Setup
+## 📌 Project Overview
 
-Python 3.11+ is recommended.
+The system reads claim conversations, submitted local images, user claim history,
+and minimum evidence requirements. It produces issue, part, evidence, risk,
+status, supporting-image, and severity fields using the exact challenge schema.
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r code\requirements.txt
+## ✨ Features
+
+- Four interchangeable backends behind one `ImageObservation` contract.
+- Deterministic default with no network, model, or API dependency.
+- English, Hindi, Hinglish, and Spanish keyword normalization.
+- Local image existence, decoding, dimensions, brightness, and blur checks.
+- CSV-driven evidence validation and user-history risk propagation.
+- Prompt-injection phrase detection and manual-review escalation.
+- Deterministic severity, supporting-image, and claim-decision rules.
+- Backend-aware caching, telemetry, logging, and per-claim failure isolation.
+- Evaluation that generates predictions before reading expected fields.
+- No hardcoded case IDs, filenames, user IDs, answers, or expected labels.
+
+## 🏗️ System Architecture
+
+```mermaid
+flowchart LR
+    A["Claim CSV"] --> B["Claim extractor"]
+    C["Local images"] --> D["Decoder and quality checks"]
+    B --> E["Selected backend"]
+    D --> E
+    E --> F["ImageObservation"]
+    G["Evidence requirements"] --> H["Evidence validator"]
+    F --> H
+    I["User history"] --> J["Risk assessor"]
+    F --> J
+    B --> H
+    B --> J
+    F --> K["Decision engine"]
+    H --> K
+    J --> K
+    K --> L["output.csv"]
+    K --> M["Evaluation report"]
 ```
 
-Unix/macOS:
+Every backend returns the same structured observation. Evidence, risk, decisions,
+and serialization remain deterministic downstream.
+
+## 🔄 Pipeline
+
+1. Read `claims.csv`, `user_history.csv`, and `evidence_requirements.csv`.
+   Evaluation reads `sample_claims.csv` through its separate entry point.
+2. Extract claimed object, part, issue, qualifiers, and instruction-risk phrases.
+3. Resolve every image path and validate file existence, decoding, dimensions,
+   brightness, and an edge-variance blur indicator.
+4. Run the selected Rules, Hugging Face, Ollama, or OpenAI backend.
+5. Normalize backend output into a structured `ImageObservation`.
+6. Apply the relevant minimum evidence requirements.
+7. Add technical, instruction-text, and user-history risk flags. History adds
+   context only and does not override evidence.
+8. Combine intent, observations, evidence, and risk in the decision engine.
+9. Validate and write the exact `output.csv` schema plus telemetry.
+10. Generate sample predictions, metrics, and `evaluation_report.md`.
+
+## 🔌 Backend Options
+
+| Backend | Runs Offline | Requires API | CPU Friendly | Image Understanding | Recommended Use |
+|---|---:|---:|---:|---|---|
+| **Rules** | Yes | No | **Yes** | No semantic pixel understanding; technical validation only | Default submission and constrained hardware |
+| **Hugging Face** | After download | No | Limited | Local SmolVLM caption-based understanding | Offline VLM experiments |
+| **Ollama** | After download | No | Limited on 8 GB RAM | Local Qwen2.5-VL understanding | Higher-memory or accelerated systems |
+| **OpenAI** | No | Yes | Yes locally; remote inference | Strongest configured vision option | Cloud analysis when API use is allowed |
+
+## ⚙️ Rule-Based Backend (Default)
+
+The default backend is deterministic, offline, CPU-friendly, and makes no model
+or API calls. It still reads and validates every referenced image.
+
+Capabilities include:
+
+- claim extraction and multilingual keyword/negation handling;
+- image existence, decoding, dimension, blur, and brightness validation;
+- evidence rules and conservative missing-contents handling;
+- deterministic issue and severity estimation from claim language;
+- single-best supporting-image selection by default;
+- multiple IDs only when claim text explicitly requires joint evidence;
+- ordered risk flags from technical checks, instruction phrases, and history;
+- deterministic claim status and concise rules-grounded explanations.
+
+Rules-backend explanations avoid claiming that pixels visibly prove damage.
+
+## 📁 Project Structure
+
+```text
+.
+├── README.md
+├── problem_statement.md
+├── dataset/
+│   ├── claims.csv
+│   ├── sample_claims.csv
+│   ├── user_history.csv
+│   ├── evidence_requirements.csv
+│   └── images/
+├── code/
+│   ├── main.py
+│   ├── config.py
+│   ├── claim_extractor.py
+│   ├── image_analyzer.py
+│   ├── evidence_validator.py
+│   ├── risk_assessor.py
+│   ├── decision_engine.py
+│   ├── utils.py
+│   ├── requirements.txt
+│   ├── .env.example
+│   └── evaluation/
+│       ├── main.py
+│       ├── metrics.json
+│       ├── sample_predictions.csv
+│       └── evaluation_report.md
+├── output.csv
+└── output.telemetry.json
+```
+
+## 📦 Installation
+
+Python 3.11 or newer is recommended. Run commands from the repository root.
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate
 pip install -r code/requirements.txt
 ```
 
-No model download or paid API key is required for the default rules setup.
+Activate on Windows with `.\.venv\Scripts\Activate.ps1`, or on Linux/macOS
+with `source .venv/bin/activate`.
 
-## Recommended rules backend
+### Rules backend
 
-`VISION_BACKEND=rules` is the default and recommended mode for CPU-only systems
-with limited RAM. It opens every referenced image, validates dimensions, measures
-blur and low light, and maps multilingual claim extraction into `ImageObservation`.
-It still applies `evidence_requirements.csv`, `user_history.csv`, risk assessment,
-and the unchanged decision engine.
-
-Its tradeoff is explicit: rules cannot independently verify semantic damage in
-pixels. They provide fast, deterministic, reproducible orchestration rather than
-model-grade visual understanding.
-
-PowerShell:
-
-```powershell
-$env:VISION_BACKEND="rules"
-python code\main.py --refresh-cache
+```bat
+set VISION_BACKEND=rules
+python code/evaluation/main.py --refresh-cache
 ```
 
-Unix/macOS:
+### Hugging Face backend
 
-```bash
-export VISION_BACKEND=rules
-python code/main.py --refresh-cache
+The configured default is the canonical SmolVLM2 500M checkpoint:
+
+```bat
+set VISION_BACKEND=huggingface
+set HF_MODEL=HuggingFaceTB/SmolVLM2-500M-Video-Instruct
+python code/evaluation/main.py --refresh-cache
 ```
 
-## Optional Hugging Face backend
+The earlier SmolVLM checkpoint can also be selected on compatible Transformers
+versions:
 
-The local model is `HuggingFaceTB/SmolVLM2-500M-Video-Instruct`. This is the
-canonical checkpoint to which the requested `SmolVLM2-500M-Instruct` name
-redirects. It handles still images, runs on CPU, and is the recommended option
-for an 8 GB RAM laptop without an NVIDIA GPU. The model is downloaded from
-Hugging Face on first use and then reused from the local cache.
-
-PowerShell:
-
-```powershell
-$env:VISION_BACKEND="huggingface"
-$env:HF_MODEL="HuggingFaceTB/SmolVLM2-500M-Video-Instruct"
-$env:HF_DEVICE="cpu"
-$env:HF_CPU_THREADS="4"
-python code\main.py
+```bat
+set HF_MODEL=HuggingFaceTB/SmolVLM-500M-Instruct
 ```
 
-Unix/macOS:
+Local inference can require significant CPU time on an 8 GB laptop.
 
-```bash
-export VISION_BACKEND=huggingface
-export HF_MODEL=HuggingFaceTB/SmolVLM2-500M-Video-Instruct
-export HF_DEVICE=cpu
-export HF_CPU_THREADS=4
-python code/main.py
+### Ollama backend
+
+```bat
+ollama pull qwen2.5vl:7b
+set VISION_BACKEND=ollama
+set OLLAMA_MODEL=qwen2.5vl:7b
+python code/evaluation/main.py --refresh-cache
 ```
 
-The first run needs internet access only to download model files. To download
-without processing the full dataset, run:
-
-```powershell
-python -c "from transformers import AutoProcessor, AutoModelForImageTextToText; m='HuggingFaceTB/SmolVLM2-500M-Video-Instruct'; AutoProcessor.from_pretrained(m); AutoModelForImageTextToText.from_pretrained(m)"
-```
-
-After that succeeds, force offline-only loading so the final run never accesses
-the network:
-
-```powershell
-$env:HF_LOCAL_FILES_ONLY="true"
-python code\main.py --refresh-cache
-```
-
-If the 500M model is not accurate enough and the laptop can tolerate higher RAM
-use and latency, switch to the 2.2B fallback without changing code:
-
-```powershell
-$env:HF_MODEL="HuggingFaceTB/SmolVLM2-2.2B-Instruct"
-```
-
-The 500M model is deliberately the lightweight option: the 2.2B variant may approach or
-exceed comfortable memory limits on an 8 GB system during generation. Lower
-`MAX_IMAGE_SIDE` (for example to `768`) or `HF_MAX_NEW_TOKENS` if memory or
-latency is still tight. Environment variables can also be placed in a local
-`code/.env` file; copy `code/.env.example` as a starting point.
-
-## Generate predictions
-
-```bash
-python code/main.py
-```
-
-This reads `dataset/claims.csv` and writes `output.csv` plus
-`output.telemetry.json`.
-
-Useful options:
-
-```bash
-python code/main.py --input dataset/claims.csv --output output.csv
-python code/main.py --model HuggingFaceTB/SmolVLM2-500M-Video-Instruct --refresh-cache --verbose
-```
-
-Responses are cached under `code/.cache/`. The cache key includes image bytes,
-the extracted claim, backend, model, and prompt version. Switching backends
-automatically ignores incompatible cache entries, so Hugging Face output can
-never be reused by the rules backend.
-
-## Evaluate
-
-```bash
-python code/evaluation/main.py
-```
-
-This generates:
-
-- `code/evaluation/sample_predictions.csv`
-- `code/evaluation/metrics.json`
-- `code/evaluation/evaluation_report.md`
-
-Expected labels are loaded only after predictions have been generated.
-
-## Failure behavior
-
-- Missing or corrupt images yield a conservative review result.
-- Model loading and inference failures are isolated to the affected image.
-- If no image can be analyzed, status is `not_enough_information` with
-  `manual_review_required`.
-- Every output row is enum- and schema-validated.
-- One failed claim does not terminate the batch.
-
-## Configuration
-
-See `.env.example`. Defaults are centralized in `config.py`. The default rules
-backend has no model, network, or API cost.
-
-Common settings:
-
-```text
-VISION_BACKEND=rules
-```
-
-Optional Hugging Face backend:
-
-```text
-VISION_BACKEND=huggingface
-HF_MODEL=HuggingFaceTB/SmolVLM2-500M-Video-Instruct
-HF_DEVICE=cpu
-HF_CPU_THREADS=4
-HF_LOCAL_FILES_ONLY=false
-```
-
-Optional Ollama backend:
-
-```text
-VISION_BACKEND=ollama
-OLLAMA_MODEL=qwen2.5vl:7b
-OLLAMA_URL=http://localhost:11434
-```
-
-Optional OpenAI backend:
+### OpenAI backend
 
 ```bash
 pip install openai
-export VISION_BACKEND=openai
-export OPENAI_API_KEY=...
-export OPENAI_VISION_MODEL=gpt-5.5
 ```
 
-All four backends use the same command after configuration:
+```bat
+set VISION_BACKEND=openai
+set OPENAI_API_KEY=YOUR_KEY
+python code/evaluation/main.py --refresh-cache
+```
+
+Never commit API keys or local `.env` files.
+
+## ▶️ Usage
+
+Generate final predictions:
 
 ```bash
 python code/main.py --refresh-cache
+```
+
+Or provide explicit paths:
+
+```bash
+python code/main.py --input dataset/claims.csv --output output.csv --dataset-dir dataset --refresh-cache
+```
+
+This writes `output.csv` and `output.telemetry.json`.
+
+## 📊 Evaluation
+
+```bash
 python code/evaluation/main.py --refresh-cache
 ```
+
+The workflow generates sample predictions before loading expected fields, then
+writes `metrics.json`, `sample_predictions.csv`, telemetry, and
+`evaluation_report.md` under `code/evaluation/`.
+
+### Latest Rules-backend results
+
+| Metric | Score |
+|---|---:|
+| Claim Status | **70%** |
+| Object Part | **90%** |
+| Evidence Standard | **85%** |
+| Valid Image | **95%** |
+| Issue Type | **65%** |
+| Severity | **60%** |
+| Risk Flags F1 | **74.33%** |
+| Supporting Image IDs | **70%** |
+| Full Row Accuracy | **50%** |
+
+The measured final run processed 44 claims and 82 images with zero model calls
+and zero processing errors. Results describe the provided sample dataset and are
+not a general production-accuracy claim.
+
+## 🔧 Configuration
+
+Configuration is centralized in `code/config.py`. Variables may be set in the
+shell or in an uncommitted `code/.env` file.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `VISION_BACKEND` | `rules` | Selects `rules`, `huggingface`, `ollama`, or `openai` |
+| `VISION_MODEL` | Backend default | Overrides the selected model identifier |
+| `HF_MODEL` | `HuggingFaceTB/SmolVLM2-500M-Video-Instruct` | Hugging Face checkpoint |
+| `HF_DEVICE` | `cpu` | Hugging Face device |
+| `HF_CPU_THREADS` | Up to 4 | Local CPU inference threads |
+| `HF_MAX_NEW_TOKENS` | `256` | Maximum local caption length |
+| `HF_LOCAL_FILES_ONLY` | `false` | Disables model network access after download |
+| `OLLAMA_MODEL` | `qwen2.5vl:7b` | Ollama model tag |
+| `OLLAMA_URL` | `http://localhost:11434` | Ollama service URL |
+| `OPENAI_API_KEY` | unset | OpenAI credential |
+| `OPENAI_VISION_MODEL` | `gpt-5.5` | OpenAI model identifier |
+| `MAX_IMAGE_SIDE` | `1024` | Maximum encoded image dimension |
+| `CLAIM_REVIEW_CACHE` | `code/.cache` | Backend-aware cache directory |
+| `LOG_LEVEL` | `INFO` | Runtime logging level |
+
+Cache keys include image bytes, extracted claim, backend, model, and prompt
+version, preventing incompatible results from crossing backends.
+
+## 🧾 Output Format
+
+`output.csv` contains exactly these columns in order:
+
+| # | Column | Description |
+|---:|---|---|
+| 1 | `user_id` | Input claimant identifier |
+| 2 | `image_paths` | Original semicolon-separated image paths |
+| 3 | `user_claim` | Original conversation |
+| 4 | `claim_object` | `car`, `laptop`, or `package` |
+| 5 | `evidence_standard_met` | `true` or `false` |
+| 6 | `evidence_standard_met_reason` | Concise evidence explanation |
+| 7 | `risk_flags` | Ordered flags or `none` |
+| 8 | `issue_type` | Normalized issue enum |
+| 9 | `object_part` | Allowed part for the object |
+| 10 | `claim_status` | `supported`, `contradicted`, or `not_enough_information` |
+| 11 | `claim_status_justification` | Concise decision explanation |
+| 12 | `supporting_image_ids` | Supporting IDs or `none` |
+| 13 | `valid_image` | `true` or `false` |
+| 14 | `severity` | `none`, `low`, `medium`, `high`, or `unknown` |
+
+## 🧠 Design Decisions
+
+- **Rules by default:** deterministic, reproducible, low latency, and suitable
+  for CPU-only systems.
+- **Honest boundaries:** the Rules backend performs technical image validation,
+  not semantic pixel interpretation. Optional VLM backends attempt the latter.
+- **One observation contract:** every backend returns `VisionResult`, which is
+  converted to the unchanged `ImageObservation` structure.
+- **Deterministic policy:** evidence, risk, support selection, decisions, enums,
+  and serialization are controlled by Python rules.
+- **History is context:** history adds risk flags but does not override evidence.
+- **Conservative contents review:** exterior package images do not prove missing
+  contents without explicit opened-package evidence.
+- **No answer memorization:** inference contains no dataset answers, case IDs,
+  filenames, user IDs, or expected labels. Samples are used only in evaluation.
+- **Backend-isolated caching:** model output from one backend cannot affect another.
+
+## 🛠️ Technologies Used
+
+| Technology | Role |
+|---|---|
+| Python 3.11+ | Application and evaluation runtime |
+| Pydantic | Structured backend schema and validation |
+| Pillow | Image decoding, resizing, brightness, and edge checks |
+| python-dotenv | Local environment configuration |
+| PyTorch | Optional Hugging Face runtime |
+| Transformers | Optional SmolVLM loading and inference |
+| Accelerate | Memory-conscious optional model loading |
+| Safetensors | Optional local model weights |
+| Ollama | Optional Qwen2.5-VL serving |
+| OpenAI Responses API | Optional cloud vision backend |
+| Python `csv`, `json`, and `logging` | Data I/O, telemetry, and diagnostics |
+
+## 🚀 Future Improvements
+
+- Add lightweight classical computer vision for stronger obstruction,
+  non-original-image, and orientation signals without a VLM.
+- Benchmark quantized local VLMs that fit comfortably within 8 GB RAM.
+- Add calibrated backend confidence and optional ensemble policies.
+- Expand multilingual coverage using held-out, non-dataset-specific tests.
+- Add unit and integration tests for every enum, adapter, and failure mode.
+- Rank supporting images using independent visual relevance signals.
+- Add bounded-memory parallel processing.
+
+## 📄 License
+
+No open-source license file is currently included. This project was produced for
+the HackerRank Orchestrate challenge and remains subject to the challenge and
+repository terms. Add an explicit license before redistribution or reuse outside
+that context.
