@@ -19,13 +19,13 @@ and OpenAI remain available when semantic image understanding is needed.
 > infer objects or damage from image pixels. Semantic fields are derived from
 > reusable conversation-extraction and policy rules.
 
-## 📌 Project Overview
+## Project Overview
 
 The system reads claim conversations, submitted local images, user claim history,
 and minimum evidence requirements. It produces issue, part, evidence, risk,
 status, supporting-image, and severity fields using the exact challenge schema.
 
-## ✨ Features
+## Features
 
 - Four interchangeable backends behind one `ImageObservation` contract.
 - Deterministic default with no network, model, or API dependency.
@@ -38,7 +38,7 @@ status, supporting-image, and severity fields using the exact challenge schema.
 - Evaluation that generates predictions before reading expected fields.
 - No hardcoded case IDs, filenames, user IDs, answers, or expected labels.
 
-## 🏗️ System Architecture
+## System Architecture
 
 ```mermaid
 flowchart LR
@@ -63,7 +63,7 @@ flowchart LR
 Every backend returns the same structured observation. Evidence, risk, decisions,
 and serialization remain deterministic downstream.
 
-## 🔄 Pipeline
+## Pipeline
 
 1. Read `claims.csv`, `user_history.csv`, and `evidence_requirements.csv`.
    Evaluation reads `sample_claims.csv` through its separate entry point.
@@ -79,7 +79,7 @@ and serialization remain deterministic downstream.
 9. Validate and write the exact `output.csv` schema plus telemetry.
 10. Generate sample predictions, metrics, and `evaluation_report.md`.
 
-## 🔌 Backend Options
+## Backend Options
 
 | Backend | Runs Offline | Requires API | CPU Friendly | Image Understanding | Recommended Use |
 |---|---:|---:|---:|---|---|
@@ -88,7 +88,7 @@ and serialization remain deterministic downstream.
 | **Ollama** | After download | No | Limited on 8 GB RAM | Local Qwen2.5-VL understanding | Higher-memory or accelerated systems |
 | **OpenAI** | No | Yes | Yes locally; remote inference | Strongest configured vision option | Cloud analysis when API use is allowed |
 
-## ⚙️ Rule-Based Backend (Default)
+## Rule-Based Backend (Default)
 
 The default backend is deterministic, offline, CPU-friendly, and makes no model
 or API calls. It still reads and validates every referenced image.
@@ -106,7 +106,7 @@ Capabilities include:
 
 Rules-backend explanations avoid claiming that pixels visibly prove damage.
 
-## 📁 Project Structure
+## Project Structure
 
 ```text
 .
@@ -138,7 +138,7 @@ Rules-backend explanations avoid claiming that pixels visibly prove damage.
 └── output.telemetry.json
 ```
 
-## 📦 Installation
+## Installation
 
 Python 3.11 or newer is recommended. Run commands from the repository root.
 
@@ -199,7 +199,7 @@ python code/evaluation/main.py --refresh-cache
 
 Never commit API keys or local `.env` files.
 
-## ▶️ Usage
+## Usage
 
 Generate final predictions:
 
@@ -215,7 +215,7 @@ python code/main.py --input dataset/claims.csv --output output.csv --dataset-dir
 
 This writes `output.csv` and `output.telemetry.json`.
 
-## 📊 Evaluation
+## Evaluation
 
 ```bash
 python code/evaluation/main.py --refresh-cache
@@ -243,7 +243,7 @@ The measured final run processed 44 claims and 82 images with zero model calls
 and zero processing errors. Results describe the provided sample dataset and are
 not a general production-accuracy claim.
 
-## 🔧 Configuration
+## Configuration
 
 Configuration is centralized in `code/config.py`. Variables may be set in the
 shell or in an uncommitted `code/.env` file.
@@ -268,7 +268,7 @@ shell or in an uncommitted `code/.env` file.
 Cache keys include image bytes, extracted claim, backend, model, and prompt
 version, preventing incompatible results from crossing backends.
 
-## 🧾 Output Format
+## Output Format
 
 `output.csv` contains exactly these columns in order:
 
@@ -289,7 +289,7 @@ version, preventing incompatible results from crossing backends.
 | 13 | `valid_image` | `true` or `false` |
 | 14 | `severity` | `none`, `low`, `medium`, `high`, or `unknown` |
 
-## 🧠 Design Decisions
+## Design Decisions
 
 - **Rules by default:** deterministic, reproducible, low latency, and suitable
   for CPU-only systems.
@@ -306,7 +306,7 @@ version, preventing incompatible results from crossing backends.
   filenames, user IDs, or expected labels. Samples are used only in evaluation.
 - **Backend-isolated caching:** model output from one backend cannot affect another.
 
-## 🛠️ Technologies Used
+## Technologies Used
 
 | Technology | Role |
 |---|---|
@@ -322,7 +322,7 @@ version, preventing incompatible results from crossing backends.
 | OpenAI Responses API | Optional cloud vision backend |
 | Python `csv`, `json`, and `logging` | Data I/O, telemetry, and diagnostics |
 
-## 🚀 Future Improvements
+## Future Improvements
 
 - Add lightweight classical computer vision for stronger obstruction,
   non-original-image, and orientation signals without a VLM.
@@ -332,10 +332,3 @@ version, preventing incompatible results from crossing backends.
 - Add unit and integration tests for every enum, adapter, and failure mode.
 - Rank supporting images using independent visual relevance signals.
 - Add bounded-memory parallel processing.
-
-## 📄 License
-
-No open-source license file is currently included. This project was produced for
-the HackerRank Orchestrate challenge and remains subject to the challenge and
-repository terms. Add an explicit license before redistribution or reuse outside
-that context.
